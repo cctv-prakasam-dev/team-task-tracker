@@ -1,0 +1,18 @@
+import { Hono } from "hono";
+
+import { createTask, deleteTask, getTaskById, listTasks, updateTask, updateTaskStatus } from "../controllers/task.controller.js";
+import { authenticate } from "../middlewares/authenticate.js";
+import { authorize } from "../middlewares/authorize.js";
+
+const router = new Hono();
+
+router.use("/*", authenticate);
+
+router.post("/", authorize("ADMIN", "MANAGER"), createTask);
+router.get("/", listTasks);
+router.get("/:id", getTaskById);
+router.put("/:id", authorize("ADMIN", "MANAGER"), updateTask);
+router.patch("/:id/status", updateTaskStatus);
+router.delete("/:id", authorize("ADMIN", "MANAGER"), deleteTask);
+
+export default router;

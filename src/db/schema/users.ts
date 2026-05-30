@@ -1,20 +1,33 @@
-import { boolean, integer, pgEnum, pgTable, serial, timestamp, varchar } from "drizzle-orm/pg-core";
+import { relations } from "drizzle-orm";
+import { boolean, index, integer, pgTable, serial, timestamp, uniqueIndex, varchar } from "drizzle-orm/pg-core";
 
 import { organizations } from "./organizations.js";
 
-export const roleEnum = pgEnum("role", ["ADMIN", "MANAGER", "MEMBER"]);
+export type UserRole = "ADMIN" | "MANAGER" | "MEMBER";
 
 export const users = pgTable("users", {
-  id: serial("id").primaryKey(),
-  name: varchar("name", { length: 255 }).notNull(),
-  email: varchar("email", { length: 255 }).notNull().unique(),
-  password_hash: varchar("password_hash", { length: 255 }).notNull(),
-  role: roleEnum("role").notNull().default("MEMBER"),
-  org_id: integer("org_id").references(() => organizations.id).notNull(),
-  is_active: boolean("is_active").default(true).notNull(),
-  created_at: timestamp("created_at").defaultNow().notNull(),
-  updated_at: timestamp("updated_at").defaultNow().notNull(),
-});
+  id: serial().primaryKey(),
+  name: varchar({ length: 255 }).notNull(),
+  email: varchar({ length: 255 }).notNull(),
+  password_hash: varchar({ length: 255 }).notNull(),
+  role: varchar({ length: 20 }).notNull().default("MEMBER").$type<UserRole>(),
+  org_id: integer().references(() => organizations.id).notNull(),
+  is_active: boolean().notNull().default(true),
+  created_at: timestamp().defaultNow().notNull(),
+  updated_at: timestamp().defaultNow().notNull(),
+}, t => [
+  uniqueIndex("users_email_idx").on(t.email),
+  index("users_org_id_idx").on(t.org_id),
+  index("users_role_idx").on(t.role),
+]);
 
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
+export type UsersTable = typeof users;
+
+export const usersRelations = relations(users, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [users.org_id],
+    references: [organizations.id],
+  }),
+}));

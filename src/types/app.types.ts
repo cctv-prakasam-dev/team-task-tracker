@@ -1,14 +1,37 @@
-
-
 import type { DBTableRow, PaginationInfo } from "./db.types.js";
+import type { UserRole } from "../db/schema/users.js";
 
 export type ActionType = string;
+export type Role = UserRole;
+export type TaskStatus = "TODO" | "IN_PROGRESS" | "IN_REVIEW" | "DONE" | "BLOCKED";
+export type TaskPriority = "LOW" | "MEDIUM" | "HIGH";
+
+export interface AuthUser {
+  id: number;
+  name: string;
+  email: string;
+  role: Role;
+  org_id: number;
+  is_active: boolean;
+}
 
 export interface PaginatedResp<T extends DBTableRow> {
   pagination_info: PaginationInfo;
   records: T[];
 }
 
+export interface JwtUserPayload {
+  sub: number;
+  iat: number;
+  entity_type?: "user" | "organisation";
+}
+
+export interface SuccessResp<T = unknown> {
+  status: number;
+  success: boolean;
+  message: string;
+  data?: T;
+}
 
 export interface emailOptions {
   to: string | null;
@@ -21,85 +44,23 @@ export interface emailOptions {
   attachments?: any;
 }
 
-export interface JwtUserPayload {
-  sub: number;
-  iat: number;
-  entity_type?: "user" | "organisation";
-}
-
-export type AppRespData = 
-  | Record<string, unknown>;
-
-export interface ManagerPerformanceData {
-  advocates_managed: number;
-  cases_assigned: number;
-  approvals_done: number;
-  comments_added: number;
-}
-
-
-export type SignUpOrSignInActivity = "sign-in-with-phone"
-
-export type UserActivity
-  = | "create-advocate"
-
-export type RefreshTokenActivity = "refresh-token";
-
 export interface DateFilter {
   startDate?: string;
   endDate?: string;
 }
 
-export type UserCounts = {
-  user_type: string;
-  count: number;
-}[];
+export type AppActivity = string;
+export type ValidatedRequest = Record<string, unknown>;
 
-export interface BriefNote {
-  id?: number;
-  title?: string;
-  note: string;
-  type?: string;
-  case_id?: number;
-  case_sub_stage?: string;
-  updated_by?: number;
+export interface OtpEntity {
+  phone?: string | null;
+  email?: string | null;
 }
 
-export interface ServiceTypeWiseCounts {
-  service_type: string | null;
-  cases_count: number;
-  revenue: number;
+export interface OtpData {
+  action: string;
+  otp: string;
+  expires_at: Date;
+  phone?: string | null;
+  email?: string | null;
 }
-
-export interface ServiceTypeWiseCountsForAdvocate {
-  service_type: string | null;
-  cases_count: number;
-}
-
-export interface StatusWiseStats {
-  status: string;
-  count: number;
-}
-
-export interface StageWiseCaseCount {
-  stage: string;
-  count: number;
-}
-
-export interface ServicesStatusWiseCounts {
-  service_type: string | null;
-  statuses: StatusWiseStats[];
-}
-
-export interface OraganisationMonthlyWiseStats {
-  month: string;
-  service_types: ServiceTypeWiseCountsForAdvocate[];
-}
-
-export type AppActivity
-  = | SignUpOrSignInActivity
-    | UserActivity
-    | RefreshTokenActivity
-
-export type ValidatedRequest
-  = Record<string, unknown>;

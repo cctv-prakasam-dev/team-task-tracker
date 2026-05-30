@@ -1,0 +1,17 @@
+import { Hono } from "hono";
+
+import { createProject, deleteProject, getProjectById, listProjects, updateProject } from "../controllers/project.controller.js";
+import { authenticate } from "../middlewares/authenticate.js";
+import { authorize } from "../middlewares/authorize.js";
+
+const router = new Hono();
+
+router.use("/*", authenticate);
+
+router.post("/", authorize("ADMIN", "MANAGER"), createProject);
+router.get("/", listProjects);
+router.get("/:id", getProjectById);
+router.put("/:id", authorize("ADMIN", "MANAGER"), updateProject);
+router.delete("/:id", authorize("ADMIN"), deleteProject);
+
+export default router;

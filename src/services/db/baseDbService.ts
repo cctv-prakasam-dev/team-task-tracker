@@ -278,7 +278,7 @@ async function saveSingleRecord<R extends DBTableRow>(
     .values(record)
     .returning();
 
-  return result[0] as R;
+  return (result as any[])[0] as R;
 }
 
 async function saveRecords<R extends DBTableRow>(
@@ -327,7 +327,7 @@ async function deleteRecordById<R extends DBTableRow>(
     .delete(table)
     .where(eq(table.id, id))
     .returning();
-  return deletedRecord[0] as R;
+  return (deletedRecord as any[])[0] as R;
 }
 
 async function softDeleteRecordById<R extends DBTableRow>(
@@ -531,7 +531,7 @@ export function parseOrderByQuery<T extends DBTableRow>(
   return orderByQueryData;
 }
 async function fetchUnreadCount(
-  table: DBTable,
+  table: any,
   caseId: number,
   userId: number,
   statusColumn: SQLWrapper,
