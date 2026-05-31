@@ -1,14 +1,38 @@
 # Team Task Tracker API
 
-A REST API for managing tasks within a team, with authentication, role-based access control, Redis caching, and containerized deployment.
+A REST API for managing tasks within a team, with JWT authentication, role-based access control, Redis caching, and containerized deployment.
+
+---
 
 ## Quick Start
 
 ```bash
-docker compose up
+docker compose up --build
 ```
 
-The API will be available at `http://localhost:3000`. No manual setup required — migrations run automatically on startup.
+That's it. The following happens automatically:
+1. PostgreSQL and Redis start
+2. Database migrations run
+3. Seed data is loaded (10,000 records per table)
+4. API starts at **http://localhost:3000**
+
+### Demo credentials (password: `Demo@1234`)
+
+| Role | Email |
+|------|-------|
+| ADMIN | admin@demo.com |
+| MANAGER | manager@demo.com |
+| MEMBER | member@demo.com |
+
+### Swagger UI
+
+Interactive API documentation is available at:
+
+```
+http://localhost:3000/api-docs
+```
+
+OpenAPI JSON spec: `http://localhost:3000/api-docs/spec.json`
 
 ---
 
@@ -16,12 +40,13 @@ The API will be available at `http://localhost:3000`. No manual setup required �
 
 | Layer | Technology |
 |-------|-----------|
-| Framework | Hono (Node.js) |
-| Language | TypeScript |
-| Database | PostgreSQL (Drizzle ORM) |
-| Cache | Redis |
-| Auth | JWT (access + refresh token rotation) |
+| Framework | Hono 4.x (Node.js) |
+| Language | TypeScript (strict) |
+| Database | PostgreSQL 16 + Drizzle ORM |
+| Cache | Redis 7 + ioredis |
+| Auth | JWT — access token + refresh token rotation |
 | Validation | Zod |
+| Password | bcryptjs (12 rounds) |
 | Container | Docker + docker-compose |
 
 ---
@@ -30,74 +55,87 @@ The API will be available at `http://localhost:3000`. No manual setup required �
 
 All endpoints are prefixed with `/api/v1`.
 
-### Auth
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| POST | /auth/register | No | Register user + create org |
-| POST | /auth/login | No | Login, returns tokens |
-| POST | /auth/refresh-token | No | Rotate refresh token |
-| POST | /auth/logout | Yes | Revoke refresh token |
-
-### Users (ADMIN only)
+### Auth — no authentication required
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | /users | List all users in org |
-| GET | /users/:id | Get user by ID |
-| PUT | /users/:id | Update user |
-| DELETE | /users/:id | Delete user |
+| POST | /auth/register | Register a new user and create an organisation |
+| POST | /auth/login | Login — returns access token + refresh token |
+| POST | /auth/refresh-token | Rotate refresh token (old one is revoked) |
+| POST | /auth/logout | Revoke the current refresh token |
 
-### Projects
+### Users — ADMIN only
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | /users | List all users in the organisation |
+| GET | /users/:id | Get a user by ID |
+| PUT | /users/:id | Update user name or active status |
+| DELETE | /users/:id | Delete a user |
+
+### Projects — authenticated
 | Method | Path | Roles | Description |
 |--------|------|-------|-------------|
-| POST | /projects | ADMIN, MANAGER | Create project |
-| GET | /projects | All | List projects in org |
-| GET | /projects/:id | All | Get project |
-| PUT | /projects/:id | ADMIN, MANAGER | Update project |
-| DELETE | /projects/:id | ADMIN | Delete project |
+| POST | /projects | ADMIN, MANAGER | Create a project |
+| GET | /projects | All | List all projects in the organisation |
+| GET | /projects/:id | All | Get a project |
+| PUT | /projects/:id | ADMIN, MANAGER | Update a project |
+| DELETE | /projects/:id | ADMIN | Delete a project |
 
-### Tasks
+### Tasks — authenticated
 | Method | Path | Roles | Description |
 |--------|------|-------|-------------|
-| POST | /tasks | ADMIN, MANAGER | Create task |
-| GET | /tasks | All | List tasks (MEMBER sees own only) |
-| GET | /tasks/:id | All | Get task |
-| PUT | /tasks/:id | ADMIN, MANAGER | Update task |
-| PATCH | /tasks/:id/status | Assignee or MANAGER/ADMIN | Update status |
-| DELETE | /tasks/:id | ADMIN, MANAGER | Delete task |
+| POST | /tasks | ADMIN, MANAGER | Create a task |
+| GET | /tasks | All | List tasks with pagination + filters (MEMBER sees only own) |
+| GET | /tasks/:id | All | Get a task (MEMBER sees only own) |
+| PUT | /tasks/:id | ADMIN, MANAGER | Update task fields |
+| PATCH | /tasks/:id/status | Assignee or MANAGER/ADMIN | Advance task status |
+| DELETE | /tasks/:id | ADMIN, MANAGER | Delete a task |
+
+#### Task list query parameters
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| page | number | Page number (default: 1) |
+| limit | number | Records per page (default: 20, max: 100) |
+| status | string | Filter by status (TODO, IN_PROGRESS, IN_REVIEW, DONE, BLOCKED) |
+| priority | string | Filter by priority (LOW, MEDIUM, HIGH) |
+| assignee_id | number | Filter by assignee user ID |
 
 ---
 
-## Roles & Permissions
+## Role Permissions
 
 | Permission | ADMIN | MANAGER | MEMBER |
-|-----------|-------|---------|--------|
-| Manage users | Yes | No | No |
-| Manage projects | Yes | Yes | No |
-| Create/delete tasks | Yes | Yes | No |
-| View all tasks | Yes | Yes | No |
-| View assigned tasks | Yes | Yes | Yes |
-| Update task status | Yes | Yes | Yes (own tasks only) |
+|-----------|:-----:|:-------:|:------:|
+| Manage users | ✓ | ✗ | ✗ |
+| Manage projects | ✓ | ✓ | ✗ |
+| Create / delete tasks | ✓ | ✓ | ✗ |
+| View all tasks | ✓ | ✓ | ✗ |
+| View own assigned tasks | ✓ | ✓ | ✓ |
+| Advance task status | ✓ | ✓ | ✓ (own tasks only) |
+
+RBAC is enforced exclusively at the middleware layer — no role checks exist inside controllers.
 
 ---
 
 ## Task Status Transitions
 
+Valid transitions are enforced server-side. Free-form status changes are rejected.
+
 ```
-TODO  -->  IN_PROGRESS  -->  IN_REVIEW  -->  DONE
-  \              \                \
-   \             \                \
-    +-----------> BLOCKED <--------+
-                    |
-          TODO / IN_PROGRESS / IN_REVIEW
+TODO  ──►  IN_PROGRESS  ──►  IN_REVIEW  ──►  DONE
+  │              │                │
+  └──────────────┴────────────────┴──►  BLOCKED
+                                              │
+                              ◄───────────────┘
+                     (back to TODO / IN_PROGRESS / IN_REVIEW)
 ```
 
-Only the **task assignee** or a **MANAGER/ADMIN** can change a task's status.
+Only the **assignee** or a **MANAGER / ADMIN** can change a task's status.
 
 ---
 
 ## Error Response Format
 
-All errors follow a consistent format:
+Every error response — validation, auth, not found, forbidden — uses the same shape:
 
 ```json
 {
@@ -107,27 +145,41 @@ All errors follow a consistent format:
 }
 ```
 
+| Code | HTTP Status |
+|------|------------|
+| BAD_REQUEST | 400 |
+| UNAUTHORIZED | 401 |
+| FORBIDDEN | 403 |
+| NOT_FOUND | 404 |
+| CONFLICT | 409 |
+| VALIDATION_ERROR | 422 |
+
 ---
 
 ## Caching Strategy
 
-**Engine:** Redis
-**Cache key:** `tasks:assignee:{userId}`
+**Engine:** Redis via ioredis  
+**Cache key pattern:** `tasks:assignee:{userId}`  
 **TTL:** 300 seconds (5 minutes)
 
-**How it works:**
-- When `GET /tasks` is called with an `assignee_id` filter (and no additional filters), the service checks Redis first
-- On a cache hit, the full task list is returned from Redis and paginated in memory — no DB query
-- On a cache miss, tasks are fetched from PostgreSQL and the result is stored in Redis
+### How it works
 
-**Invalidation triggers:**
-- Task **created** with an assignee → delete `tasks:assignee:{assigneeId}`
-- Task **updated** → delete cache for old assignee AND new assignee (if changed)
-- Task **deleted** → delete `tasks:assignee:{assigneeId}`
-- Status change → delete `tasks:assignee:{assigneeId}`
+When `GET /tasks` is called with an `assignee_id` filter and no additional filters, the service checks Redis first:
+- **Cache hit** → return the stored list, paginate in memory — zero DB queries
+- **Cache miss** → query PostgreSQL, store full result in Redis, return page
 
-**Why per-assignee keys?**
-Surgical invalidation — only the affected user's cache is cleared. A global task cache would require invalidating on every write. Per-assignee keys ensure that a change to User A's task never invalidates User B's cache.
+### Invalidation triggers
+
+| Event | Cache action |
+|-------|-------------|
+| Task created with assignee | Delete `tasks:assignee:{assigneeId}` |
+| Task updated (assignee changed) | Delete cache for old AND new assignee |
+| Task updated (status / priority changed) | Delete `tasks:assignee:{assigneeId}` |
+| Task deleted | Delete `tasks:assignee:{assigneeId}` |
+
+### Why per-assignee keys?
+
+A global task cache would require invalidation on every single write — defeating the purpose. Per-assignee keys are surgical: a change to User A's task never touches User B's cache. The most common read pattern in a task tracker is "show me my tasks", which maps directly to one cache key per user.
 
 ---
 
@@ -136,49 +188,52 @@ Surgical invalidation — only the affected user's cache is cleared. A global ta
 ### Schema
 
 ```
-organizations   (id, name, slug)
-users           (id, name, email, password_hash, role, org_id, is_active)
-refresh_tokens  (id, user_id, token_hash, expires_at, is_revoked)
-projects        (id, name, description, org_id, created_by)
-tasks           (id, title, description, priority, status, assignee_id, project_id, due_date, created_by)
+organizations   id · name · slug
+users           id · name · email · password_hash · role · org_id · is_active
+refresh_tokens  id · user_id · token_hash · expires_at · is_revoked
+projects        id · name · description · org_id · created_by
+tasks           id · title · description · priority · status · assignee_id · project_id · due_date · created_by
 ```
 
 ### Indexes
 
-Three indexes on the `tasks` table cover the most common filter columns:
+Required indexes on the `tasks` table (the heaviest-read table):
 
 ```sql
-CREATE INDEX idx_tasks_status      ON tasks(status);
-CREATE INDEX idx_tasks_assignee_id ON tasks(assignee_id);
-CREATE INDEX idx_tasks_due_date    ON tasks(due_date);
+CREATE INDEX tasks_status_idx      ON tasks(status);
+CREATE INDEX tasks_assignee_id_idx ON tasks(assignee_id);
+CREATE INDEX tasks_due_date_idx    ON tasks(due_date);
 ```
 
-### Design Decision: Why a separate `organizations` table?
+Additional supporting indexes: `tasks_project_id_idx`, `tasks_priority_idx`, `users_email_idx` (unique), `organizations_slug_idx` (unique).
 
-Users belong to an organization. Rather than storing `org_name` on every user row, a normalized `organizations` table keeps org metadata in one place and makes it easy to:
-- Add org-level settings later (e.g., plan, billing)
-- Query all users or projects in an org with a single JOIN
-- Enforce uniqueness via `slug` without scanning the users table
+### Design decision — Why a separate `organizations` table?
 
-All queries are scoped to `org_id` at the service layer, ensuring one org cannot access another's data.
+Storing `org_name` as a column on the `users` table is simpler but creates redundancy and makes future org-level features (plan tier, billing, settings) impossible without a migration. A dedicated `organizations` table:
+
+- Enforces name uniqueness via a single `slug` unique index — no full-table scan on every register
+- Lets all queries be scoped to `org_id` at the service layer so one organisation can never read another's data
+- Supports adding org-level configuration columns without touching the `users` schema
 
 ---
 
 ## Local Development (without Docker)
 
 ```bash
-# 1. Copy env file
+# 1. Copy environment variables
 cp .env.example .env
-# Edit .env with your local DB/Redis credentials
+# Fill in your local PostgreSQL and Redis credentials
 
 # 2. Install dependencies
 npm install
 
-# 3. Generate and run migrations
-npm run db:generate
+# 3. Run migrations
 npm run migrate
 
-# 4. Start dev server
+# 4. Seed demo data (optional but recommended)
+npm run seed
+
+# 5. Start dev server with hot reload
 npm run dev
 ```
 
@@ -186,10 +241,10 @@ npm run dev
 
 ## What I Would Improve Given More Time
 
-1. **Tests** — Integration tests for auth flow and task status transitions using a test DB
-2. **Analytics endpoint** — Overdue task count per user + average completion time using SQL window functions
-3. **Real-time notifications** — SSE or WebSocket events when a task's status changes
-4. **Rate limiting** — Per-IP and per-user rate limiting on auth endpoints
-5. **Soft deletes** — Add `deleted_at` to tasks/projects instead of hard deletes to preserve history
-6. **Pagination cursor** — Replace offset pagination with cursor-based for large datasets
-7. **OpenAPI spec** — Auto-generate from Zod schemas using `@hono/zod-openapi`
+1. **Integration tests** — Auth flow and task status transition tests using a dedicated test database and an isolated test runner (Vitest / Jest)
+2. **Analytics endpoint** — Overdue task count per user and average completion time using PostgreSQL window functions (`OVER PARTITION BY`)
+3. **Real-time notifications** — SSE stream so the assignee's client is pushed a notification the moment their task status changes
+4. **Rate limiting** — Per-IP throttle on `/auth/login` and `/auth/register` to prevent brute-force attacks
+5. **Soft deletes** — Add `deleted_at` timestamp to `tasks` and `projects` so history is never permanently lost
+6. **Cursor-based pagination** — Replace offset pagination with a keyset cursor for consistent performance on large datasets
+7. **Refresh token family tracking** — Detect refresh token reuse attacks (if a revoked token is presented, revoke the entire token family)
