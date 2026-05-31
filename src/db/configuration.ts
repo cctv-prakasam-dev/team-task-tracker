@@ -1,3 +1,5 @@
+import fs from "node:fs";
+
 import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
 
@@ -10,8 +12,21 @@ import { users, usersRelations } from "./schema/users.js";
 
 const { Pool } = pg;
 
+let sslConfig: pg.PoolConfig["ssl"] = false;
+try {
+  const ca = fs.readFileSync("./ca.pem").toString();
+  sslConfig = { rejectUnauthorized: true, ca };
+} catch {
+  // no ca.pem — SSL disabled (local dev without certificate)
+}
+
 const dbClient = new Pool({
-  connectionString: dbConfig.DATABASE_URL,
+  host: dbConfig.host,
+  port: dbConfig.port,
+  user: dbConfig.user,
+  password: dbConfig.password,
+  database: dbConfig.database,
+  ssl: sslConfig,
 });
 
 export const db = drizzle(dbClient, {

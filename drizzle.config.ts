@@ -1,19 +1,21 @@
-import * as dotenv from "dotenv";
-import { defineConfig } from "drizzle-kit";
+/* eslint-disable node/no-process-env */
 
-dotenv.config();
+import { defineConfig } from "drizzle-kit";
+import fs from "node:fs";
 
 export default defineConfig({
-  schema: [
-    "./src/db/schema/organizations.ts",
-    "./src/db/schema/users.ts",
-    "./src/db/schema/refresh_tokens.ts",
-    "./src/db/schema/projects.ts",
-    "./src/db/schema/tasks.ts",
-  ],
-  out: "./drizzle",
   dialect: "postgresql",
+  schema: "./src/db/schema/*",
+  out: "./migrations",
   dbCredentials: {
-    url: process.env.DATABASE_URL!,
+    host: process.env.DB_HOST!,
+    port: Number(process.env.DB_PORT!),
+    user: process.env.DB_USER!,
+    password: process.env.DB_PASSWORD!,
+    database: process.env.DB_NAME!,
+    ssl: {
+      rejectUnauthorized: true,
+      ca: fs.readFileSync("./ca.pem").toString(),
+    },
   },
 });
