@@ -1,14 +1,16 @@
-import { and, count, sql } from "drizzle-orm";
+import { and, count, eq, inArray } from "drizzle-orm";
+import type { SQL } from "drizzle-orm";
 
 import type { TaskStatus } from "../types/app.types.js";
-import type { WhereQueryData } from "../types/db.types.js";
 import type { CreateTaskInput, ListTasksQuery, UpdateTaskInput } from "../validations/schema/task.schema.js";
 
 import { db } from "../db/configuration.js";
 import { projects } from "../db/schema/projects.js";
+import type { Project } from "../db/schema/projects.js";
 import { tasks } from "../db/schema/tasks.js";
-import { users } from "../db/schema/users.js";
 import type { Task } from "../db/schema/tasks.js";
+import { users } from "../db/schema/users.js";
+import type { User } from "../db/schema/users.js";
 import BadRequestException from "../exceptions/badRequestException.js";
 import ForbiddenException from "../exceptions/forbiddenException.js";
 import NotFoundException from "../exceptions/notFoundException.js";
@@ -20,8 +22,6 @@ import {
   updateRecordById,
 } from "./db/baseDbService.js";
 import { cacheService } from "./cache.service.js";
-import type { Project } from "../db/schema/projects.js";
-import type { User } from "../db/schema/users.js";
 
 const VALID_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
   TODO: ["IN_PROGRESS", "BLOCKED"],
@@ -82,14 +82,17 @@ async function listTasks(query: ListTasksQuery, orgId: number, requestingUserId:
 
   const projectIds = await getOrgProjectIds(orgId);
   if (projectIds.length === 0) {
-    return { pagination_info: { total_records: 0, total_pages: 1, page_size: limit, current_page: page, next_page: null, prev_page: null }, records: [] };
+    return {
+      pagination_info: { total_records: 0, total_pages: 1, page_size: limit, current_page: page, next_page: null, prev_page: null },
+      records: [],
+    };
   }
 
-  // build where conditions
-  const conditions: any[] = [sql`${tasks.project_id} = ANY(${projectIds})`];
-  if (effectiveAssigneeId) conditions.push(sql`${tasks.assignee_id} = ${effectiveAssigneeId}`);
-  if (status) conditions.push(sql`${tasks.status} = ${status}`);
-  if (priority) conditions.push(sql`${tasks.priority} = ${priority}`);
+  // build conditions using proper Drizzle operators (no raw sql templates)
+  const conditions: SQL[] = [inArray(tasks.project_id, projectIds)];
+  if (effectiveAssigneeId) conditions.push(eq(tasks.assignee_id, effectiveAssigneeId));
+  if (status) conditions.push(eq(tasks.status, status));
+  if (priority) conditions.push(eq(tasks.priority, priority));
 
   const whereClause = and(...conditions);
   const offset = (page - 1) * limit;
@@ -112,10 +115,10 @@ async function listTasks(query: ListTasksQuery, orgId: number, requestingUserId:
   const total_records = countResult[0]?.total ?? 0;
   const total_pages = Math.ceil(total_records / limit) || 1;
 
-  // populate cache for assignee-only queries
+  // populate cache for assignee-only queries (no extra filters, reasonable size)
   if (effectiveAssigneeId && !status && !priority && total_records <= 500) {
     const allTasks = await db.query.tasks.findMany({
-      where: and(sql`${tasks.project_id} = ANY(${projectIds})`, sql`${tasks.assignee_id} = ${effectiveAssigneeId}`),
+      where: and(inArray(tasks.project_id, projectIds), eq(tasks.assignee_id, effectiveAssigneeId)),
       with: {
         assignee: { columns: { id: true, name: true, email: true } },
         creator: { columns: { id: true, name: true } },

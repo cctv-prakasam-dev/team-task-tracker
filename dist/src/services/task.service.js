@@ -1,4 +1,4 @@
-import { and, count, sql } from "drizzle-orm";
+import { and, count, eq, inArray } from "drizzle-orm";
 import { db } from "../db/configuration.js";
 import { projects } from "../db/schema/projects.js";
 import { tasks } from "../db/schema/tasks.js";
@@ -59,16 +59,19 @@ async function listTasks(query, orgId, requestingUserId, requestingUserRole) {
     }
     const projectIds = await getOrgProjectIds(orgId);
     if (projectIds.length === 0) {
-        return { pagination_info: { total_records: 0, total_pages: 1, page_size: limit, current_page: page, next_page: null, prev_page: null }, records: [] };
+        return {
+            pagination_info: { total_records: 0, total_pages: 1, page_size: limit, current_page: page, next_page: null, prev_page: null },
+            records: [],
+        };
     }
-    // build where conditions
-    const conditions = [sql `${tasks.project_id} = ANY(${projectIds})`];
+    // build conditions using proper Drizzle operators (no raw sql templates)
+    const conditions = [inArray(tasks.project_id, projectIds)];
     if (effectiveAssigneeId)
-        conditions.push(sql `${tasks.assignee_id} = ${effectiveAssigneeId}`);
+        conditions.push(eq(tasks.assignee_id, effectiveAssigneeId));
     if (status)
-        conditions.push(sql `${tasks.status} = ${status}`);
+        conditions.push(eq(tasks.status, status));
     if (priority)
-        conditions.push(sql `${tasks.priority} = ${priority}`);
+        conditions.push(eq(tasks.priority, priority));
     const whereClause = and(...conditions);
     const offset = (page - 1) * limit;
     const [countResult, records] = await Promise.all([
@@ -87,10 +90,10 @@ async function listTasks(query, orgId, requestingUserId, requestingUserRole) {
     ]);
     const total_records = countResult[0]?.total ?? 0;
     const total_pages = Math.ceil(total_records / limit) || 1;
-    // populate cache for assignee-only queries
+    // populate cache for assignee-only queries (no extra filters, reasonable size)
     if (effectiveAssigneeId && !status && !priority && total_records <= 500) {
         const allTasks = await db.query.tasks.findMany({
-            where: and(sql `${tasks.project_id} = ANY(${projectIds})`, sql `${tasks.assignee_id} = ${effectiveAssigneeId}`),
+            where: and(inArray(tasks.project_id, projectIds), eq(tasks.assignee_id, effectiveAssigneeId)),
             with: {
                 assignee: { columns: { id: true, name: true, email: true } },
                 creator: { columns: { id: true, name: true } },

@@ -33,10 +33,27 @@ services:
     build: .
     command: node dist/migrate.js
     environment:
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/task_tracker
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: task_tracker
     depends_on:
       postgres:
         condition: service_healthy
+
+  seed:
+    build: .
+    command: node dist/seed.js
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: task_tracker
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
 
   app:
     build: .
@@ -45,12 +62,16 @@ services:
       - "3000:3000"
     environment:
       PORT: 3000
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/task_tracker
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: task_tracker
       REDIS_URL: redis://redis:6379
       JWT_SECRET: supersecretjwtkey_change_in_production
       API_VERSION: v1
     depends_on:
-      migrate:
+      seed:
         condition: service_completed_successfully
       redis:
         condition: service_healthy

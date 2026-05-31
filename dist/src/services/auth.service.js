@@ -1,4 +1,4 @@
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
 import { db } from "../db/configuration.js";
 import { organizations } from "../db/schema/organizations.js";
 import { refresh_tokens } from "../db/schema/refresh_tokens.js";
